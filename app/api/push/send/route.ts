@@ -15,9 +15,13 @@ if (vapidPublicKey && vapidPrivateKey) {
 
 export async function POST(req: NextRequest) {
   try {
-    // Only allow internal/cron calls (no external access)
+    const cronSecret = process.env.CRON_SECRET;
+    if (!cronSecret || cronSecret.length === 0) {
+      console.error("[Nova Push] CRON_SECRET is not set");
+      return NextResponse.json({ error: "Server misconfiguration" }, { status: 503 });
+    }
     const authHeader = req.headers.get("authorization");
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
