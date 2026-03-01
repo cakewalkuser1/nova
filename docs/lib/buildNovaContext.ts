@@ -32,7 +32,17 @@ export async function buildNovaContext(
     .order("datetime", { ascending: true })
     .limit(REMINDERS_LIMIT);
 
-  const lines: string[] = [];
+  const memoryCount = memories?.length ?? 0;
+  const peopleCount = people?.length ?? 0;
+  const totalShared = memoryCount + peopleCount;
+  const relationshipDepth =
+    totalShared >= 10
+      ? "You've shared a lot with Nova."
+      : totalShared >= 3
+        ? "Nova is getting to know you."
+        : "Nova is still learning your taste.";
+
+  const lines: string[] = [relationshipDepth];
   if (people?.length) {
     for (const p of people) {
       const rel = p.relationship ? ` (${p.relationship})` : "";
@@ -49,8 +59,8 @@ export async function buildNovaContext(
     lines.push("Upcoming reminders: " + reminders.map((r) => r.title).join("; "));
   }
 
-  if (lines.length === 0) {
-    return "Context about this user (use only to sound like you know them): None yet.";
+  if (lines.length === 1 && lines[0] === relationshipDepth) {
+    return `Context about this user (use only to sound like you know them): ${relationshipDepth} No preferences or people stored yet.`;
   }
   return (
     "Context about this user (use only to sound like you know them; do not list these out):\n- " +
