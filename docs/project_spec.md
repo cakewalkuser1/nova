@@ -79,6 +79,22 @@ This is a persistent AI companion with evolving memory.
 
 ---
 
+## Environment
+
+Set these in `.env.local` and in Vercel project settings as needed:
+
+| Variable | Purpose |
+|----------|---------|
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase (or `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY`) |
+| `OPENAI_API_KEY` | Chat intent extraction and Nova replies |
+| `TAVILY_API_KEY` | Optional; when set, Nova can use web search (Tavily) to look up current info and links |
+| `CRON_SECRET` | Optional; when set, cron and push/send routes require `Authorization: Bearer <value>` |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | Web push notifications; optional `VAPID_SUBJECT` (e.g. `mailto:you@example.com`) |
+| `TWILIO_AUTH_TOKEN` | Twilio webhook signature verification (SMS); optional if not using SMS |
+| Twilio Account SID, phone numbers | For sending/receiving SMS |
+
+---
+
 ## System Architecture
 
 ```

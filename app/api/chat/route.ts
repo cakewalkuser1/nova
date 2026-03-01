@@ -1,6 +1,11 @@
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { buildNovaContext } from "@/docs/lib/buildNovaContext";
 import { logObservation } from "@/docs/lib/observationLogger";
+import { NOVA_SYSTEM_PROMPT } from "@/docs/lib/novaPrompt";
+import { parseRecommendations } from "@/docs/lib/parseRecommendations";
+import { searchWeb, formatSearchResultForModel } from "@/docs/lib/search";
 import { getSupabaseClient } from "@/docs/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +15,25 @@ const openai = process.env.OPENAI_API_KEY
   : null;
 
 const DEFAULT_USER = "anon-mvp";
+const MAX_TOOL_ITERATIONS = 3;
+
+const webSearchToolDefinition = {
+  type: "function" as const,
+  function: {
+    name: "web_search",
+    description:
+      "Search the web for current information. Use when you need up-to-date facts, a link for a movie/song/article, or when the user asks something you're not sure about.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The search query" },
+        max_results: { type: "number", description: "Max results (1-10)", default: 5 },
+        topic: { type: "string", enum: ["general", "news"], description: "general or news" },
+      },
+      required: ["query"],
+    },
+  },
+};
 
 type Intent =
   | { type: "reminder"; title: string; datetime: string; person?: string }
@@ -87,7 +111,7 @@ async function getRecentReminders(client: ReturnType<typeof getSupabaseClient>, 
   return (data ?? []) as { id: string; title: string; datetime: string; completed: boolean }[];
 }
 
-function buildReply(
+function buildFallbackReply(
   message: string,
   intent: Intent,
   reminderCreated: boolean,
@@ -95,22 +119,22 @@ function buildReply(
   recallReminders: { title: string; datetime: string }[]
 ): string {
   if (intent.type === "reminder" && reminderCreated)
-    return "I’ll remind you. I’ve got it.";
+    return "I'll remind you. I've got it.";
   if (intent.type === "reminder" && !reminderCreated)
-    return "I couldn’t save that reminder right now. Try again in a moment.";
+    return "I couldn't save that reminder right now. Try again in a moment.";
   if (intent.type === "memory_fact" && memoryStored)
-    return "Noted. I’ll remember that.";
+    return "Noted. I'll remember that.";
   if (intent.type === "greeting")
     return "Hi. How can I help today?";
   if (intent.type === "emotional_checkin")
-    return "I’m here if you want to talk. No pressure.";
+    return "I'm here if you want to talk. No pressure.";
   const askingWhatTheyAsked = intent.type === "question" || (intent.type === "other" && isRecallQuestion(message));
   if (askingWhatTheyAsked && recallReminders.length > 0)
     return recallReminders.length === 1
       ? `You asked me to remind you: ${recallReminders[0].title}.`
       : `You asked me to remind you about ${recallReminders.length} things: ${recallReminders.map((r) => r.title).join("; ")}.`;
   if (askingWhatTheyAsked)
-    return "I don’t have any reminders from you yet. Tell me what you’d like me to remember.";
+    return "I don't have any reminders from you yet. Tell me what you'd like me to remember.";
   return "Got it. Anything else?";
 }
 
@@ -120,7 +144,7 @@ export async function POST(req: NextRequest) {
     const message = typeof body.message === "string" ? body.message.trim() : "";
     const userId = typeof body.userId === "string" ? body.userId : DEFAULT_USER;
     if (!message) {
-      return NextResponse.json({ reply: "Say something when you’re ready." }, { status: 200 });
+      return NextResponse.json({ reply: "Say something when you're ready." }, { status: 200 });
     }
 
     const intent = await extractIntent(message);
@@ -177,11 +201,103 @@ export async function POST(req: NextRequest) {
     }
 
     const recentReminders = await getRecentReminders(client, userId);
-    const reply = buildReply(message, intent, reminderCreated, memoryStored, recentReminders);
+
+    if (!openai) {
+      const reply = buildFallbackReply(message, intent, reminderCreated, memoryStored, recentReminders);
+      return NextResponse.json({
+        reply,
+        reminderCreated,
+        memoryStored,
+        isCheckIn: intent.type === "emotional_checkin",
+      });
+    }
+
+    const contextBlock = await buildNovaContext(userId, client);
+    const systemContent = contextBlock + "\n\n" + NOVA_SYSTEM_PROMPT;
+
+    const hasSearch = Boolean(process.env.TAVILY_API_KEY?.trim());
+    const tools = hasSearch ? [webSearchToolDefinition] : undefined;
+
+    const messages: ChatCompletionMessageParam[] = [
+      { role: "system", content: systemContent },
+      { role: "user", content: message },
+    ];
+
+    let lastMessage: { content: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> } = { content: null };
+    let iterations = 0;
+
+    while (iterations < MAX_TOOL_ITERATIONS) {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages,
+        max_tokens: 800,
+        ...(tools ? { tools, tool_choice: "auto" as const } : {}),
+      });
+
+      const choice = completion.choices[0];
+      if (!choice?.message) {
+        lastMessage = { content: "Something went wrong. Try again." };
+        break;
+      }
+
+      const msg = choice.message;
+      lastMessage = { content: msg.content ?? null, tool_calls: msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined };
+
+      messages.push({
+        role: "assistant",
+        content: msg.content ?? undefined,
+        tool_calls: msg.tool_calls,
+      } as ChatCompletionMessageParam);
+
+      const toolCalls = msg.tool_calls?.filter((tc) => tc.function?.name === "web_search") ?? [];
+      if (toolCalls.length === 0) {
+        break;
+      }
+
+      const toolResults: ChatCompletionMessageParam[] = [];
+      for (const tc of toolCalls) {
+        let args: { query?: string; max_results?: number; topic?: string } = {};
+        try {
+          args = JSON.parse(tc.function?.arguments ?? "{}") as typeof args;
+        } catch {
+          // ignore
+        }
+        const query = typeof args.query === "string" ? args.query : message;
+        const searchPayload = await searchWeb(query, {
+          maxResults: typeof args.max_results === "number" ? args.max_results : 5,
+          topic: args.topic === "news" ? "news" : "general",
+        });
+        const content = formatSearchResultForModel(searchPayload);
+        toolResults.push({
+          role: "tool",
+          tool_call_id: tc.id,
+          content,
+        });
+      }
+      messages.push(...toolResults);
+      iterations++;
+    }
+
+    let replyText = lastMessage.content?.trim() ?? "Got it. Anything else?";
+    const { cleanReply, items: recommendationItems } = parseRecommendations(replyText);
+    replyText = cleanReply || replyText;
+
+    let recommendationsAdded = 0;
+    for (const item of recommendationItems) {
+      const { error } = await client.from("recommendations").insert({
+        user_id: userId,
+        type: item.type,
+        title: item.title,
+        url: item.url,
+      });
+      if (!error) recommendationsAdded++;
+    }
+
     return NextResponse.json({
-      reply,
+      reply: replyText,
       reminderCreated,
       memoryStored,
+      recommendationsAdded,
       isCheckIn: intent.type === "emotional_checkin",
     });
   } catch (e) {

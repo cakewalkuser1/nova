@@ -110,3 +110,61 @@ CREATE POLICY "Allow anon select sms_messages" ON public.sms_messages FOR SELECT
 
 CREATE INDEX IF NOT EXISTS idx_sms_messages_user_phone ON public.sms_messages(user_id, phone_number);
 CREATE INDEX IF NOT EXISTS idx_sms_messages_created ON public.sms_messages(created_at);
+
+-- Habits (detected from interactions; used by cron for nudges and streak celebrations)
+CREATE TABLE IF NOT EXISTS public.habits (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id text NOT NULL,
+  description text NOT NULL,
+  detected_pattern text NOT NULL,
+  confidence_score double precision NOT NULL,
+  last_observed timestamptz NOT NULL
+);
+ALTER TABLE public.habits ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon insert habits" ON public.habits FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anon select habits" ON public.habits FOR SELECT TO anon USING (true);
+CREATE POLICY "Allow anon update habits" ON public.habits FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE INDEX IF NOT EXISTS idx_habits_user_id ON public.habits(user_id);
+CREATE INDEX IF NOT EXISTS idx_habits_confidence ON public.habits(confidence_score);
+
+-- Memories (person, preference, event from chat memory_fact intents)
+CREATE TABLE IF NOT EXISTS public.memories (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id text NOT NULL,
+  type text NOT NULL,
+  content text NOT NULL,
+  importance_score double precision NOT NULL DEFAULT 0.5,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.memories ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon insert memories" ON public.memories FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anon select memories" ON public.memories FOR SELECT TO anon USING (true);
+CREATE INDEX IF NOT EXISTS idx_memories_user_id ON public.memories(user_id);
+
+-- People (from memory_fact person intents with name/relationship)
+CREATE TABLE IF NOT EXISTS public.people (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id text NOT NULL,
+  name text NOT NULL,
+  relationship text NOT NULL DEFAULT '',
+  last_interaction timestamptz NOT NULL DEFAULT now(),
+  importance_score double precision NOT NULL DEFAULT 0.5
+);
+ALTER TABLE public.people ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon insert people" ON public.people FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anon select people" ON public.people FOR SELECT TO anon USING (true);
+CREATE INDEX IF NOT EXISTS idx_people_user_id ON public.people(user_id);
+
+-- Recommendations (Nova-generated: movies, videos, music, posts)
+CREATE TABLE IF NOT EXISTS public.recommendations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id text NOT NULL,
+  type text NOT NULL CHECK (type IN ('movie', 'video', 'music', 'post')),
+  title text NOT NULL,
+  url text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.recommendations ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon insert recommendations" ON public.recommendations FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anon select recommendations" ON public.recommendations FOR SELECT TO anon USING (true);
+CREATE INDEX IF NOT EXISTS idx_recommendations_user_created ON public.recommendations(user_id, created_at);
