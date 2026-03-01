@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseClient } from "@/docs/lib/supabase";
+import { runHabitDetectionJob } from "@/docs/lib/habitScheduler";
 import webpush from "web-push";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +14,7 @@ if (vapidPublicKey && vapidPrivateKey) {
   webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 }
 
-// Vercel Cron: runs every minute
-// Add to vercel.json: { "crons": [{ "path": "/api/cron/deliver-reminders", "schedule": "* * * * *" }] }
+// Vercel Cron: schedule in vercel.json (e.g. */15 * * * * for every 15 min)
 
 const CHECK_IN_MESSAGES = [
   "How's your day been?",
@@ -24,7 +24,16 @@ const CHECK_IN_MESSAGES = [
   "How's everything going?",
 ];
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Optional: require CRON_SECRET when set (for external cron or lock-down)
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret && cronSecret.length > 0) {
+    const authHeader = req.headers.get("authorization");
+    if (authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   const client = getSupabaseClient();
   const now = new Date();
   const nowISO = now.toISOString();
@@ -32,6 +41,13 @@ export async function GET() {
   let checkinsSent = 0;
   let nudgesSent = 0;
   let streaksCelebrated = 0;
+
+  // ===== 0. HABIT DETECTION (populates habits for nudges + streak celebrations) =====
+  try {
+    await runHabitDetectionJob({ lookbackDays: 30 });
+  } catch (e) {
+    console.error("[Nova Cron] Habit detection failed:", e);
+  }
 
   // ===== 1. DELIVER DUE REMINDERS =====
   const { data: dueReminders, error: fetchError } = await client
@@ -237,3 +253,4 @@ export async function GET() {
     streaksCelebrated,
   });
 }
+
