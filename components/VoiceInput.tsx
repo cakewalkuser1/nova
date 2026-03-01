@@ -4,10 +4,10 @@ import { useState, useCallback, useEffect, useRef } from "react";
 
 interface SpeechRecognitionResultEvent {
   resultIndex: number;
-  results: { [i: number]: { [j: number]: { transcript: string } }; length: number };
+  results: { length: number; [i: number]: { length?: number; [j: number]: { transcript: string }; isFinal?: boolean } };
 }
 
-type SpeechRecognitionCtor = new () => {
+interface SpeechRecognitionInstance {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
@@ -16,7 +16,9 @@ type SpeechRecognitionCtor = new () => {
   onresult: ((e: SpeechRecognitionResultEvent) => void) | null;
   onend: (() => void) | null;
   onerror: (() => void) | null;
-};
+}
+
+type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
 
 declare global {
   interface Window {
@@ -72,7 +74,7 @@ function PulseRings() {
 export function VoiceInput({ onTranscript, disabled }: VoiceInputProps) {
   const [isListening, setIsListening] = useState(false);
   const [hasVoice, setHasVoice] = useState(false);
-  const recognitionRef = useRef<ReturnType<SpeechRecognitionCtor> | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
 
   useEffect(() => {
     setHasVoice(!!getSpeechRecognition());

@@ -46,14 +46,14 @@ export function GlassCard({
 // Specialized card variants for common use cases
 export function MessageCard({ 
   children, 
-  type = "default",
+  type = "nova",
   className = "" 
 }: { 
   children: ReactNode; 
   type?: "user" | "nova" | "reminder" | "nudge" | "checkin";
   className?: string;
 }) {
-  const typeStyles = {
+  const typeStyles: Record<"user" | "nova" | "reminder" | "nudge" | "checkin", string> = {
     user: "bg-sage-muted border-sage/30 rounded-bubble rounded-tl-none",
     nova: "bg-white/60 border-white/40 rounded-bubble rounded-tr-none",
     reminder: "bg-sage-muted border-sage/40 rounded-bubble rounded-tr-none border-l-4",
