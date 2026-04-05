@@ -25,11 +25,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Failed to complete" }, { status: 500 });
     }
 
-    // Also update any associated nova_messages to mark them visually
-    await client
+    // Update associated nova_messages with plain values (Supabase update() accepts only static values)
+    const { data: relatedMessages } = await client
       .from("nova_messages")
-      .update({ content: (old: { content?: string }) => old.content?.replace("Reminder:", "Done:") || old.content })
+      .select("id, content")
       .eq("source_reminder_id", reminderId);
+
+    for (const row of relatedMessages ?? []) {
+      const newContent = (row.content ?? "").replace(/^Reminder:\s*/i, "Done: ");
+      await client
+        .from("nova_messages")
+        .update({ content: newContent })
+        .eq("id", row.id);
+    }
 
     return NextResponse.json({ success: true });
   } catch (e) {

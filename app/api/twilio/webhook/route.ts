@@ -17,8 +17,26 @@ const phoneToUserId: Record<string, string> = {};
 
 export async function POST(req: NextRequest) {
   try {
-    // Verify Twilio signature in production
     const formData = await req.formData();
+    const signature = req.headers.get("x-twilio-signature");
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+    // Verify Twilio signature so only Twilio can post to this webhook
+    if (authToken && signature) {
+      const url = req.nextUrl.origin + req.nextUrl.pathname;
+      const params: Record<string, string> = {};
+      formData.forEach((value, key) => {
+        params[key] = typeof value === "string" ? value : "";
+      });
+      const isValid = twilio.validateRequest(authToken, signature, url, params);
+      if (!isValid) {
+        console.warn("[Twilio Webhook] Invalid signature");
+        return NextResponse.json({ error: "Invalid signature" }, { status: 403 });
+      }
+    } else if (authToken && !signature) {
+      return NextResponse.json({ error: "Missing signature" }, { status: 403 });
+    }
+
     const from = formData.get("From") as string;
     const to = formData.get("To") as string;
     const body = formData.get("Body") as string;
