@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { GlassCard } from "./GlassCard";
 
 const DEFAULT_USER_ID = "anon-mvp";
 
@@ -108,27 +109,56 @@ export function PushNotifications() {
   if (!isSupported) return null;
 
   return (
-    <div className="rounded-xl bg-zinc-900/50 border border-zinc-800 p-3">
+    <GlassCard className="p-4">
       <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-medium text-zinc-300">Push Notifications</h3>
-          <p className="text-xs text-zinc-500">
-            {isSubscribed ? "You'll get reminders even when closed" : "Enable to get reminders anywhere"}
-          </p>
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors duration-300 ${
+            isSubscribed ? "bg-sage/20" : "bg-textLight/20"
+          }`}>
+            <svg className={`w-5 h-5 transition-colors duration-300 ${
+              isSubscribed ? "text-sage" : "text-textLight"
+            }`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-medium text-textPrimary">Push Notifications</h3>
+            <p className="text-xs text-textMuted">
+              {isSubscribed ? "You'll get reminders even when closed" : "Enable to get reminders anywhere"}
+            </p>
+          </div>
         </div>
         <button
           onClick={isSubscribed ? unsubscribe : subscribe}
           disabled={loading}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+          className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 ${
             isSubscribed
-              ? "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
-              : "bg-emerald-800/50 text-emerald-200 hover:bg-emerald-700/50"
-          } disabled:opacity-50`}
+              ? "bg-textLight/20 text-textMuted hover:bg-textLight/30"
+              : "bg-sage text-white hover:bg-sage-dark shadow-lg shadow-sage/20"
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
         >
-          {loading ? "..." : isSubscribed ? "Disable" : "Enable"}
+          {loading ? (
+            <span className="flex items-center gap-2">
+              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+            </span>
+          ) : (
+            isSubscribed ? "Disable" : "Enable"
+          )}
         </button>
       </div>
-      {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
-    </div>
+      {error && (
+        <div className="mt-3 p-3 rounded-xl bg-rose/10 border border-rose/20">
+          <p className="text-xs text-rose-dark flex items-center gap-2">
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            {error}
+          </p>
+        </div>
+      )}
+    </GlassCard>
   );
 }
